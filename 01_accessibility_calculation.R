@@ -13,6 +13,7 @@ library(nngeo)
 library(tidyverse)
 library(tmap)
 library(ggspatial)
+library(wesanderson)
 
 
 
@@ -190,9 +191,10 @@ percentiles <- 50
 departure_datetime <- as.POSIXct("16-06-2022 07:00:43",
                                  format = "%d-%m-%Y %H:%M:%S",
                                  tz = "CET")
+# Sumary per grid cell
 summary(df_population$aantal_inwoners_25_tot_45_jaar)
+# Check the total pop - around 3.8 millition seems ok
 sum(df_population$aantal_inwoners_25_tot_45_jaar)
-?accessibility
 # From selected origins
 access_car <- accessibility(r5r_core,
                            origins = sf_test_destinations,
@@ -210,7 +212,7 @@ access_car <- accessibility(r5r_core,
 
 access_car
 
-
+# Public transport
 access_pt <- accessibility(r5r_core,
                         origins = sf_test_destinations,
                         destinations = df_population,
@@ -226,6 +228,7 @@ access_pt <- accessibility(r5r_core,
 
 
 access_pt
+# Bicyce
 access_bicycle <- accessibility(r5r_core,
                         origins = sf_test_destinations,
                         destinations = df_population,
@@ -243,7 +246,7 @@ access_bicycle <- accessibility(r5r_core,
 
 access_bicycle
 
-
+# E-Bike
 access_ebike <- accessibility(r5r_core,
                                 origins = sf_test_destinations,
                                 destinations = df_population,
@@ -264,7 +267,6 @@ access_ebike
 # Compare the results
 access_bicycle <-access_bicycle %>% mutate(mode='Bicycle [12 km/h]')
 access_ebike <-access_ebike %>% mutate(mode='E-Bike [25 km/h]')
-
 access_car <- access_car %>% mutate(mode='Car')
 access_pt <- access_pt %>% mutate(mode='Public transport')
 # Bind the rows
@@ -275,20 +277,39 @@ levels_mode <- rev(c('Car','Public transport', 'E-Bike [25 km/h]','Bicycle [12 k
 labels_mode <- rev(c('Car','Public transport', 'E-Bike [25 km/h]','Bicycle [12 km/h]'))
 
 
+# Bind all the rows
 access_all <- bind_rows(access_bicycle,access_ebike,access_car,access_pt) %>% 
   mutate(site=factor(from_id,levels_sites,labels_sites,ordered=T),
          mode_f=factor(mode,levels_mode,labels_mode))%>%
   filter(mode!='Car')
-  
 
 
-  #inner_join(sf_sites %>%
-  #             st_drop_geometry(), by=c("from_id"="id"))%>%
-  #as.data.frame() %>% as_tibble() %>% rename(site=name)
-
+# Select a palette
+p <- wes_palette('Zissou1',n=3)
+# Plot it
 ggplot(access_all,aes(x=site,y=accessibility,group=mode_f))+
   geom_bar(stat="identity",aes(fill=mode_f), position = "dodge")+
-  ylab("Accessibilty to population [25 - 45 years old]")+
-  xlab( "Site")
+  ylab("Accessibilty to population [25 - 45 years old]\n")+
+  xlab( "\nSite")+ 
+  theme_bw(base_size = 16)+
+  scale_fill_manual(values=p, name= 'Mode')
+
+# Accessibility all
+# Public transport
+sf_population_4326 <- sf_population_4326 %>% mutate(id=crs28992res100m)
+access_pt <- accessibility(r5r_core,
+                           origins = sf_population_4326,
+                           destinations = df_population,
+                           mode = mode,
+                           opportunities_colname = "aantal_inwoners",
+                           decay_function = "step",
+                           cutoffs = travel_time_cutoff,
+                           departure_datetime = departure_datetime,
+                           max_walk_dist = max_walk_dist,
+                           time_window = time_window,
+                           percentiles = percentiles,
+                           verbose = FALSE)
+
+
 
 
