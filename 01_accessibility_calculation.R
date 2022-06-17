@@ -15,15 +15,6 @@ library(tmap)
 library(ggspatial)
 library(wesanderson)
 
-
-
-# Accessibility!
-
-
-
-# TODO Add stops and reli
-# 
-
 # Routing! ------
 # We will use the package r5r
 # This requires JAVA JDK 11 
@@ -113,13 +104,16 @@ sfc_as_cols <- function(x, names = c("x","y")) {
 }
 
 sf_population_4326 <- sf_population %>% st_transform(4326) 
-
+# Attach coordinate to df
 sf_population_coords <- sfc_as_cols(sf_population_4326, names = c("lon","lat"))
+# Replace NA with 0 (-99997)
 df_population <- sf_population_coords %>% st_drop_geometry() %>% as_tibble() %>% 
   mutate(across(everything(), ~replace(., . ==  -99997 , 0)))%>%
   mutate(id=crs28992res100m)
-df_population %>% relocate(lon,lat,.after="crs28992res100m")
 
+# Inspect
+df_population %>% relocate(lon,lat,.after="crs28992res100m")
+# Inspect
 tail(df_population %>% relocate(lon,lat,.after="crs28992res100m"))
 # Isochrone ------
 # Example inspired by https://ipeagit.github.io/r5r/articles/calculating_isochrones.html
@@ -142,16 +136,19 @@ ttm <- travel_time_matrix(r5r_core,
                           progress = FALSE)
 # View the results
 ttm
-sf_output <- st_read("_data/cbs_vk100_2020_v2.gpkg",layer='vierkant_100m_2020')
 
+# Read the data once more to get the polygons back of our data set
+sf_output <- st_read("_data/cbs_vk100_2020_v2.gpkg",layer='vierkant_100m_2020')
+# Join the travel times to the times
 sf_output2 <- sf_output %>% mutate(id=crs28992res100m) %>%  inner_join(ttm ,by=c("id"="toId"))
+# Write a gpkg with the results
 write_sf(sf_output2,"travel_time_matrix.gpkg")
 
 # add coordinates of destinations to travel time matrix
 ttm <- df_population %>% 
   mutate(id=as.character(id)) %>%
   inner_join(ttm ,by=c("id"="toId"))
-
+# Write the results to inspect in QGIS
 write_csv(ttm,"ttm_enschede_transit.csv")
 
 
@@ -170,7 +167,7 @@ ttm_bike <- travel_time_matrix(r5r_core,
                           progress = FALSE)
 # View the results
 ttm_bike
-
+# Speed e-bike
 ttm_ebike <- travel_time_matrix(r5r_core,
                                origins = sf_test_destinations[1,],
                                destinations = df_population,
@@ -186,7 +183,11 @@ ttm_ebike <- travel_time_matrix(r5r_core,
                                progress = FALSE)
 # View the results
 ttm_ebike
-?travel_time_matrix
+
+
+# Join the different matrices
+# Note that this approach is not bullit proof as 
+# we do not create a set with all destinations reached
 ttm_all <- ttm_ebike %>% dplyr::rename(travel_time_ebike = travel_time) %>%
   left_join(ttm_bike %>%dplyr::rename(travel_time_bike = travel_time) ) %>%
   left_join(ttm  %>%dplyr::rename(travel_time_pt = travel_time))%>%
@@ -194,12 +195,13 @@ ttm_all <- ttm_ebike %>% dplyr::rename(travel_time_ebike = travel_time) %>%
   mutate(perc_diff_100=round(100*perc_diff,0))
   
 
+# Write a gpkg with the travel ti e difference
+# Easier to create maps in QGIS
 sf_output3 <- sf_output %>% mutate(id=crs28992res100m) %>%  inner_join(ttm_all ,by=c("id"="toId"))%>%
   mutate(aantal_inwoners=if_else(aantal_inwoners<0,0.0,aantal_inwoners*1.0))
 write_sf(sf_output3,"travel_time_matrix_diff.gpkg")
 
-  View(sf_output3)
-  
+
 
 
 # interpolate estimates to get spatially smooth result
@@ -238,7 +240,7 @@ mode <- c("WALK", "TRANSIT")
 max_walk_dist <- 1200 # in meters
 travel_time_cutoff <- 45 # in minutes
 time_window <- 60 # in minutes
-percentiles <- 25
+percentiles <- 10
 departure_datetime <- as.POSIXct("16-06-2022 07:00:43",
                                  format = "%d-%m-%Y %H:%M:%S",
                                  tz = "CET")
@@ -247,6 +249,7 @@ summary(df_population$aantal_inwoners_25_tot_45_jaar)
 # Check the total pop - around 3.8 millition seems ok
 sum(df_population$aantal_inwoners_25_tot_45_jaar)
 # From selected origins
+# Route car
 access_car <- accessibility(r5r_core,
                            origins = sf_test_destinations,
                            destinations = df_population,
@@ -331,23 +334,26 @@ labels_mode <- rev(c('Car','Public transport', 'E-Bike [25 km/h]','Bicycle [12 k
 
 
 # Bind all the rows
+# Note that we filter out the car
 access_all <- bind_rows(access_bicycle,access_ebike,access_car,access_pt) %>% 
   mutate(site=factor(from_id,levels_sites,labels_sites,ordered=T),
          mode_f=factor(mode,levels_mode,labels_mode))%>%
   filter(mode!='Car')
 
-
 # Select a palette
 p <- wes_palette('Zissou1',n=3)
 # Plot it
+options(scipen=10000)
 ggplot(access_all,aes(x=site,y=accessibility,group=mode_f))+
   geom_bar(stat="identity",aes(fill=mode_f), position = "dodge")+
-  ylab("Accessibilty to population [25 - 45 years old]\n")+
+  ylab("Accessibilty to population\n")+
   xlab( "\nSite")+ 
   theme_bw(base_size = 16)+
   scale_fill_manual(values=p, name= 'Mode')
 
-# Accessibility all
+
+
+# Accessibility all ----
 # Public transport
 sf_population_4326 <- sf_population_4326 %>% mutate(id=crs28992res100m)
 access_pt <- accessibility(r5r_core,
